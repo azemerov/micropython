@@ -1,0 +1,4 @@
+WIFI_SSID='sputnik2.5'
+WIFI_PASSWORD='Belka19Strelka61'
+DHT_PIN = 4
+
