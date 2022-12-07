@@ -9,7 +9,7 @@ import dht
 from machine import I2C, Pin
 #import BME280
 import urequests
-#import ujson
+import ujson
 
 D0 = 16
 D1 = 5
@@ -24,6 +24,7 @@ cSCL = D1
 cSCA = D2
 
 SLEEP_PERIOD = 20*60*1000 # 20 minutes in milliseconds
+#SLEEP_PERIOD = 1*60*1000
 
 def isdebug():
     debug = Pin(cDEBUG, Pin.IN, Pin.PULL_UP)
@@ -51,8 +52,7 @@ def connect():
 
 data = list()
 
-def send_data():
-    #print('send_data')
+def indirect_send_data_():
     try:
         x = connect()
         if not x:
@@ -63,19 +63,16 @@ def send_data():
             return None
         blink()
         while data:
-            temp, humidity, pressure, ts = data.pop()
-
-            #url =  'https://data.mongodb-api.com/app/data-blzil/endpoint/data/beta/action/insertOne'
+            ts, temp, humidity, pressure = data.pop()
             #url = f'http://192.168.1.86:5000/addtemp?temp={temp}'
             #url = f'http://192.168.1.104:5000/addtemp?temp={temp}'
             #print('make url')
             url = f'https://vespa-proxy.herokuapp.com/addtemp?temp={temp}&humidity={humidity}&pressure={pressure}&ts={ts}'
             #print('call GET', url)
             res = urequests.get(url)
-            #print( temp, humidity, res.status_code )
-            #print('return', res)
         return res
     except Exception as e:
+        print("error", str(e))
         if isdebug():
             print('ERROR')
         else:
@@ -83,17 +80,59 @@ def send_data():
                 f.write(f"send_data(): {str(e)}\n")
         return None
 
-    ##Directly send to MongoDB API
-    #api_key = 'Z6p51gsY6CrdyGkhmLCy3uYHJJCmRWVvoVZHOZqPSfbxTX8u64tZg916BfdWLqXN'
-    #data = ujson.dumps({"collection": "temperature", "database": "weatherDb", "dataSource": "VespaCluster", "document": {
-    #    "ts": "2022-05-01", "temp": temp}})
-    #headers = {
-    #        "content-type": "application/json",
-    #        "api-key": api_key,
-    #        "Access-Control-Request-Headers": "*",
-    #        }
-    #res = urequests.post(url, headers=headers, data=None) #.json()
-    #return res
+def send_data(data):
+#Directly send to MongoDB API
+    try:
+        x = connect()
+        if not x:
+            blink(5, 0.1, 0.1)
+            print("cannot connect WiFi")
+            with open("error.txt", "a") as f:
+                f.write("cannot connect WiFi\n")
+            return None
+        blink()
+        cnt = 0
+        while data:
+            ts, temp, humidity, pressure = data[0]
+            url =  'https://data.mongodb-api.com/app/data-blzil/endpoint/data/beta/action/insertOne'
+            api_key = 'Z6p51gsY6CrdyGkhmLCy3uYHJJCmRWVvoVZHOZqPSfbxTX8u64tZg916BfdWLqXN'
+            req = ujson.dumps({
+                "collection": "temperature",
+                "database": "weatherDb",
+                "dataSource": "VespaCluster",
+                "document": {
+                    "ts": {"$date": ts},
+                    #"ts": {"$date": {"$numberLong": "%s" % int(round(time.time())}}
+                    "humidity": humidity,
+                    "pressure": pressure,
+                    "temp": temp
+                }
+            })
+            headers = {
+                    "content-type": "application/json",
+                    "api-key": api_key,
+                    "Access-Control-Request-Headers": "*",
+                    }
+            res = urequests.post(url, headers=headers, data=req)
+            if res.status_code >= 200 and res.status_code <= 299:
+                #with open("data.txt", "a") as f:
+                #    f.write(f"{res.text}\n")
+                print('OK', res.status_code, res.text)
+                data.pop()
+                cnt -= 1
+            else:
+                #print('ERROR', res.status_code, res.text)
+                with open("error.txt", "a") as f:
+                    f.write(f"send_data(): unable to send data: {res.status_code} {res.text}\n")
+                break
+        return cnt
+    except Exception as e:
+        if isdebug():
+            print('ERROR', str(e))
+        else:
+            with open("error.txt", "a") as f:
+                f.write(f"send_data(): {str(e)}\n")
+        return None
 
 def blink(cnt=1, time1=0.3, time2=0.3):
     led = Pin(cLED, Pin.OUT)
@@ -159,32 +198,40 @@ def seeLevelPressure(height, pressure, temperature):
 
 def run():
     blink()
-    
+    connect()
+    res = urequests.get("http://worldtimeapi.org/api/timezone/America/Chicago")
+    if res.status_code==200:
+        ts = ujson.loads(res.text)["datetime"]
+    else:
+        with open("error.txt", "a") as f:
+            f.write(f"ERROR, cannot get current time {res.status_code} {res.text}\n")
+        return
+        
     #ts = rtc.datetime()
-    #ts = "%04d-%02d-%02d %02d:%02d:%02d" % (ts[0:3] + ts[4:7])
-    ts = int(round(time.time()))
+    #ts = "%04d-%02d-%02dT%02d:%02d:%02dZ" % (ts[0:3] + ts[4:7])
+    #ts = int(round(time.time()))
     temp, humidity = getTempHum()
     temp1, _, pressure = getPress()
     pressure = seeLevelPressure(179, pressure, temp1)
-    data.append((temp, humidity, pressure, ts))
+    print(temp, humidity, pressure, ts)
+    data.append((ts, temp, humidity, pressure))
     if len(data) > 0:
-        send_data()
+        send_data(data)
     blink()
 
-    rtc = machine.RTC()
     with open("data.txt", "a") as f:
         f.write(f"{ts} {temp} {humidity} {pressure}\n")
 
     led = blink()
 
+blink()
+rtc = machine.RTC()
+
+if not isdebug():
+    run()
     rtc.irq(trigger=rtc.ALARM0, wake=machine.DEEPSLEEP)
     rtc.alarm(rtc.ALARM0, SLEEP_PERIOD)
-    if not isdebug():
-        machine.deepsleep()
-
-
-blink()
-run()
+    machine.deepsleep()
 # after one iteration machine does not do anything, just goes to deep sleep
 # the alarm will wake up machine which will cause a next round of main module excecution
 

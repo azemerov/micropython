@@ -14,6 +14,6 @@ def send_data(temp):
             "Access-Control-Request-Headers": "*",
             }
 
-    res = urequests.post(url, headers=headers, data=None) #.json()
+    res = urequests.post(url, headers=headers, data=data) #.json()
     return res #['code']
 
