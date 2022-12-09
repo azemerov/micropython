@@ -44,7 +44,11 @@ def connect():
     if not sta_if.isconnected():
         print('conenct WiFi...')
         sta_if.connect(config.WIFI_SSID, config.WIFI_PASSWORD)
-        time.sleep(3)
+    for t in range(15):
+        if sta_if.isconnected():
+            break
+        blink()
+        time.sleep(1)
     if not sta_if.isconnected():
         print("WiFi is not connected using %s, %s" % (config.WIFI_SSID, config.WIFI_PASSWORD))
         return sta_if
@@ -55,7 +59,7 @@ data = list()
 def indirect_send_data_():
     try:
         x = connect()
-        if not x:
+        if not x or not x.isconnected():
             blink(5, 0.1, 0.1)
             print("cannot connect WiFi")
             with open("error.txt", "a") as f:
@@ -84,7 +88,7 @@ def send_data(data):
 #Directly send to MongoDB API
     try:
         x = connect()
-        if not x:
+        if not x or not x.isconnected():
             blink(5, 0.1, 0.1)
             print("cannot connect WiFi")
             with open("error.txt", "a") as f:
@@ -198,18 +202,36 @@ def seeLevelPressure(height, pressure, temperature):
 
 def run():
     blink()
-    connect()
-    res = urequests.get("http://worldtimeapi.org/api/timezone/America/Chicago")
+    print('try to connect')
+    x = connect()
+    if not x or not x.isconnected():
+        blink(5, 0.1, 0.1)
+        print("cannot connect WiFi")
+        with open("error.txt", "a") as f:
+            f.write("cannot connect WiFi\n")
+        return
+    print('try to get time')
+    for tt in range(0, 10):
+        try:
+            res = urequests.get("http://worldtimeapi.org/api/timezone/America/Chicago")
+            break
+        except Exception as e:
+            print("get time: ", tt, str(e))
+            if tt == 9:
+                with open("error.txt", "a") as f:
+                    f.write(f"ERROR, cannot get current time error={str(e)}\n")
+                return
+            else:
+                time.sleep(3)
     if res.status_code==200:
         ts = ujson.loads(res.text)["datetime"]
     else:
+        print('get time - ', res.status_code)
         with open("error.txt", "a") as f:
-            f.write(f"ERROR, cannot get current time {res.status_code} {res.text}\n")
+            f.write(f"ERROR, cannot get current time status={res.status_code} text={res.text}\n")
         return
         
-    #ts = rtc.datetime()
-    #ts = "%04d-%02d-%02dT%02d:%02d:%02dZ" % (ts[0:3] + ts[4:7])
-    #ts = int(round(time.time()))
+    #ts = rtc.datetime(); ts = "%04d-%02d-%02dT%02d:%02d:%02dZ" % (ts[0:3] + ts[4:7]); ts = int(round(time.time()))
     temp, humidity = getTempHum()
     temp1, _, pressure = getPress()
     pressure = seeLevelPressure(179, pressure, temp1)
