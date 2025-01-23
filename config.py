@@ -1,4 +1,4 @@
-WIFI_SSID='sputnik2.5'
+WIFI_SSID='sputnik12'
 WIFI_PASSWORD='Belka19Strelka61'
-DHT_PIN = 4
-
+#WIFI_SSID='SpectrumSetup-9D'
+#WIFI_PASSWORD='otherwriter368'

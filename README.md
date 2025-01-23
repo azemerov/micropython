@@ -11,3 +11,6 @@ rshell --port /dev/ttyUSB0
 repl
 # you may execute main.py
 import main
+
+# current version uses main_save2.py as main module:
+cp main_save2.py /pyboard/main.py
